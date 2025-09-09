@@ -90,15 +90,53 @@ check_requirements() {
 
 install_python_packages() {
     log_info "Installing required Python packages..."
-    pip3 install psutil requests
     
-    # Try to install boto3 for EC2 instance name detection (optional)
-    log_info "Installing optional AWS boto3 package for EC2 instance name detection..."
-    if pip3 install boto3 2>/dev/null; then
-        log_info "boto3 installed successfully - EC2 instance names will be detected"
+    # Try different installation methods based on system
+    if command -v apt-get &> /dev/null; then
+        # Ubuntu/Debian - use apt packages when available
+        log_info "Detected Debian/Ubuntu system, using apt packages..."
+        apt-get update -qq
+        apt-get install -y python3-psutil python3-requests python3-boto3 2>/dev/null || {
+            log_warn "Some apt packages not available, falling back to pip with --break-system-packages"
+            pip3 install --break-system-packages psutil requests boto3 2>/dev/null || {
+                log_warn "pip install failed, trying without boto3..."
+                pip3 install --break-system-packages psutil requests
+            }
+        }
+    elif command -v yum &> /dev/null; then
+        # RHEL/CentOS - use yum packages when available
+        log_info "Detected RHEL/CentOS system, using yum packages..."
+        yum install -y python3-psutil python3-requests python3-boto3 2>/dev/null || {
+            log_warn "Some yum packages not available, falling back to pip..."
+            pip3 install psutil requests boto3 2>/dev/null || {
+                log_warn "boto3 install failed, continuing without it..."
+                pip3 install psutil requests
+            }
+        }
+    elif command -v dnf &> /dev/null; then
+        # Fedora - use dnf packages when available
+        log_info "Detected Fedora system, using dnf packages..."
+        dnf install -y python3-psutil python3-requests python3-boto3 2>/dev/null || {
+            log_warn "Some dnf packages not available, falling back to pip..."
+            pip3 install psutil requests boto3 2>/dev/null || {
+                log_warn "boto3 install failed, continuing without it..."
+                pip3 install psutil requests
+            }
+        }
     else
-        log_warn "boto3 installation failed - EC2 instance names won't be available (instance ID will be used instead)"
+        # Other systems - try pip directly
+        log_info "Unknown system, trying pip installation..."
+        pip3 install psutil requests boto3 2>/dev/null || {
+            # If externally managed environment, use --break-system-packages
+            log_warn "Standard pip failed, trying with --break-system-packages..."
+            pip3 install --break-system-packages psutil requests boto3 2>/dev/null || {
+                log_warn "boto3 install failed, continuing with core packages only..."
+                pip3 install --break-system-packages psutil requests
+            }
+        }
     fi
+    
+    log_info "Python package installation completed"
 }
 
 create_install_directory() {
