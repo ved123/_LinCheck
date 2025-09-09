@@ -1,0 +1,10 @@
+{
+  "webhook_url": "https://your-webhook-url.com/alerts",
+  "cpu_threshold": 85,
+  "memory_threshold": 90,
+  "disk_threshold": 85,
+  "sustained_threshold_minutes": 15,
+  "check_interval_seconds": 60,
+  "disk_partitions": ["/"]
+}
+
