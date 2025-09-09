@@ -145,29 +145,46 @@ create_install_directory() {
 }
 
 copy_files() {
-    log_info "Copying monitor files..."
+    log_info "Downloading/copying monitor files..."
     
-    # Copy the main script
+    # Check if we're running from downloaded files or need to download
     if [[ -f "$SCRIPT_DIR/system_monitor.py" ]]; then
+        log_info "Using local files..."
         cp "$SCRIPT_DIR/system_monitor.py" "$INSTALL_DIR/"
         chmod +x "$INSTALL_DIR/system_monitor.py"
+        
+        if [[ -f "$SCRIPT_DIR/monitor_config.json" ]]; then
+            cp "$SCRIPT_DIR/monitor_config.json" "$INSTALL_DIR/"
+        fi
     else
-        log_error "system_monitor.py not found in $SCRIPT_DIR"
-        exit 1
+        log_info "Downloading files from GitHub repository..."
+        # Download the main script
+        if curl -sSL -o "$INSTALL_DIR/system_monitor.py" "https://raw.githubusercontent.com/ved123/_LinCheck/main/system_monitor.py"; then
+            chmod +x "$INSTALL_DIR/system_monitor.py"
+            log_info "Downloaded system_monitor.py successfully"
+        else
+            log_error "Failed to download system_monitor.py"
+            exit 1
+        fi
+        
+        # Download config file
+        if curl -sSL -o "$INSTALL_DIR/monitor_config.json" "https://raw.githubusercontent.com/ved123/_LinCheck/main/monitor_config.json"; then
+            log_info "Downloaded monitor_config.json successfully"
+        else
+            log_warn "Failed to download config file, creating default config"
+        fi
     fi
     
-    # Copy or create config file
-    if [[ -f "$SCRIPT_DIR/monitor_config.json" ]]; then
-        cp "$SCRIPT_DIR/monitor_config.json" "$INSTALL_DIR/"
-    else
-        log_warn "monitor_config.json not found, creating default config"
+    # Create default config if it doesn't exist
+    if [[ ! -f "$INSTALL_DIR/monitor_config.json" ]]; then
+        log_info "Creating default configuration file..."
         cat > "$INSTALL_DIR/monitor_config.json" << EOF
 {
   "webhook_url": "",
   "cpu_threshold": 90,
   "memory_threshold": 90,
   "disk_threshold": 90,
-  "alert_duration_minutes": 15,
+  "sustained_threshold_minutes": 15,
   "check_interval_seconds": 60,
   "disk_partitions": ["/"]
 }
