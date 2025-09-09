@@ -246,6 +246,101 @@ class SystemMonitor:
             print(f"Error sending webhook: {e}")
             return False
     
+    def send_test_message(self, hostname, ip_address, ec2_info):
+        """Send a friendly test message showing current system status"""
+        if not self.config["webhook_url"]:
+            print("Webhook URL not configured. Skipping test message.")
+            return False
+        
+        # Get current system stats
+        cpu_usage = self.get_cpu_usage()
+        memory_usage = self.get_memory_usage()
+        disk_usage = self.get_disk_usage("/")
+        
+        # Build server identification
+        server_name = hostname
+        if ec2_info["instance_name"]:
+            server_name = ec2_info["instance_name"]
+        elif ec2_info["instance_id"]:
+            server_name = f"{hostname} ({ec2_info['instance_id']})"
+        
+        # Create friendly test message
+        message = f"✅ Server '{server_name}' added to monitoring\n"
+        message += f"Current status: CPU {cpu_usage:.1f}% | Memory {memory_usage:.1f}% | Disk {disk_usage:.1f}%"
+        
+        # Simple payload that works with most webhooks
+        payload = {
+            "text": message,
+            "username": "System Monitor",
+            "icon_emoji": ":computer:",
+            "attachments": [
+                {
+                    "color": "good",
+                    "fields": [
+                        {
+                            "title": "Server",
+                            "value": server_name,
+                            "short": True
+                        },
+                        {
+                            "title": "IP Address", 
+                            "value": ip_address,
+                            "short": True
+                        },
+                        {
+                            "title": "CPU Usage",
+                            "value": f"{cpu_usage:.1f}%",
+                            "short": True
+                        },
+                        {
+                            "title": "Memory Usage",
+                            "value": f"{memory_usage:.1f}%", 
+                            "short": True
+                        },
+                        {
+                            "title": "Disk Usage",
+                            "value": f"{disk_usage:.1f}%",
+                            "short": True
+                        }
+                    ]
+                }
+            ]
+        }
+        
+        # Add EC2 info if available
+        if ec2_info["instance_type"]:
+            payload["attachments"][0]["fields"].append({
+                "title": "Instance Type",
+                "value": ec2_info["instance_type"],
+                "short": True
+            })
+        
+        if ec2_info["availability_zone"]:
+            payload["attachments"][0]["fields"].append({
+                "title": "Availability Zone", 
+                "value": ec2_info["availability_zone"],
+                "short": True
+            })
+        
+        try:
+            response = requests.post(
+                self.config["webhook_url"],
+                json=payload,
+                timeout=10,
+                headers={"Content-Type": "application/json"}
+            )
+            
+            if response.status_code == 200:
+                print(f"Test message sent successfully: {message.split(chr(10))[0]}")
+                return True
+            else:
+                print(f"Failed to send test message. HTTP {response.status_code}: {response.text}")
+                return False
+                
+        except Exception as e:
+            print(f"Error sending test message: {e}")
+            return False
+    
     def should_send_alert(self, alert_key, current_time):
         """Check if enough time has passed since last alert to avoid spam"""
         last_alert = self.state["last_alert_sent"].get(alert_key)
@@ -366,7 +461,8 @@ def main():
     
     if args.test_webhook:
         hostname, ip_address, ec2_info = monitor.get_system_info()
-        monitor.send_webhook_alert("cpu", 95.5, hostname, ip_address, ec2_info)
+        # Send a friendly test message instead of alarm format
+        monitor.send_test_message(hostname, ip_address, ec2_info)
     elif args.once:
         monitor.run_once()
     elif args.daemon:
