@@ -64,6 +64,6 @@ log_info "Running installation..."
 cd /
 rm -rf "$TEMP_DIR"
 
-log_info "Quick installation completed!"
+log_info "Quick installation completed successfully!"
 log_info "Monitor is now running and will check every minute via cron."
 log_info "View logs: tail -f /var/log/system-monitor.log"
