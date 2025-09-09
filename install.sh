@@ -7,6 +7,8 @@ set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 INSTALL_DIR="/opt/system-monitor"
+CONFIG_DIR="/etc/lincheck_monitoring"
+STATE_DIR="/var/lib/lincheck_monitoring"
 SERVICE_USER="root"
 WEBHOOK_URL=""
 
@@ -139,9 +141,20 @@ install_python_packages() {
     log_info "Python package installation completed"
 }
 
-create_install_directory() {
-    log_info "Creating installation directory: $INSTALL_DIR"
+create_install_directories() {
+    log_info "Creating installation directories..."
     mkdir -p "$INSTALL_DIR"
+    mkdir -p "$CONFIG_DIR"
+    mkdir -p "$STATE_DIR"
+    
+    # Set proper permissions
+    chmod 755 "$CONFIG_DIR"
+    chmod 755 "$STATE_DIR"
+    
+    log_info "Created directories:"
+    log_info "  - Scripts: $INSTALL_DIR"
+    log_info "  - Config: $CONFIG_DIR" 
+    log_info "  - State: $STATE_DIR"
 }
 
 copy_files() {
@@ -154,7 +167,7 @@ copy_files() {
         chmod +x "$INSTALL_DIR/system_monitor.py"
         
         if [[ -f "$SCRIPT_DIR/monitor_config.json" ]]; then
-            cp "$SCRIPT_DIR/monitor_config.json" "$INSTALL_DIR/"
+            cp "$SCRIPT_DIR/monitor_config.json" "$CONFIG_DIR/"
         fi
     else
         log_info "Downloading files from GitHub repository..."
@@ -168,7 +181,7 @@ copy_files() {
         fi
         
         # Download config file
-        if curl -sSL -o "$INSTALL_DIR/monitor_config.json" "https://raw.githubusercontent.com/ved123/_LinCheck/main/monitor_config.json"; then
+        if curl -sSL -o "$CONFIG_DIR/monitor_config.json" "https://raw.githubusercontent.com/ved123/_LinCheck/main/monitor_config.json"; then
             log_info "Downloaded monitor_config.json successfully"
         else
             log_warn "Failed to download config file, creating default config"
@@ -176,9 +189,9 @@ copy_files() {
     fi
     
     # Create default config if it doesn't exist
-    if [[ ! -f "$INSTALL_DIR/monitor_config.json" ]]; then
+    if [[ ! -f "$CONFIG_DIR/monitor_config.json" ]]; then
         log_info "Creating default configuration file..."
-        cat > "$INSTALL_DIR/monitor_config.json" << EOF
+        cat > "$CONFIG_DIR/monitor_config.json" << EOF
 {
   "webhook_url": "",
   "cpu_threshold": 90,
@@ -197,7 +210,7 @@ configure_webhook() {
         log_info "Configuring webhook URL..."
         python3 << EOF
 import json
-config_file = "$INSTALL_DIR/monitor_config.json"
+config_file = "$CONFIG_DIR/monitor_config.json"
 with open(config_file, 'r') as f:
     config = json.load(f)
 config['webhook_url'] = "$WEBHOOK_URL"
@@ -206,7 +219,7 @@ with open(config_file, 'w') as f:
 EOF
         log_info "Webhook URL configured successfully"
     else
-        log_warn "No webhook URL provided. You'll need to edit $INSTALL_DIR/monitor_config.json manually"
+        log_warn "No webhook URL provided. You'll need to edit $CONFIG_DIR/monitor_config.json manually"
     fi
 }
 
@@ -266,10 +279,22 @@ uninstall() {
         rm -rf "$INSTALL_DIR"
     fi
     
-    # Remove log file
+    # Remove config directory
+    if [[ -d "$CONFIG_DIR" ]]; then
+        log_info "Removing configuration directory..."
+        rm -rf "$CONFIG_DIR"
+    fi
+    
+    # Remove state directory
+    if [[ -d "$STATE_DIR" ]]; then
+        log_info "Removing state directory..."
+        rm -rf "$STATE_DIR"
+    fi
+    
+    # Remove log files (including rotated ones)
     if [[ -f "/var/log/system-monitor.log" ]]; then
-        log_info "Removing log file..."
-        rm -f "/var/log/system-monitor.log"
+        log_info "Removing log files..."
+        rm -f "/var/log/system-monitor.log"*
     fi
     
     log_info "System monitor uninstalled successfully"
@@ -314,7 +339,7 @@ main() {
     
     check_requirements
     install_python_packages
-    create_install_directory
+    create_install_directories
     copy_files
     configure_webhook
     setup_cron
@@ -326,15 +351,16 @@ main() {
     
     log_info "Installation completed successfully!"
     log_info ""
-    log_info "Configuration file: $INSTALL_DIR/monitor_config.json"
-    log_info "Log file: /var/log/system-monitor.log"
+    log_info "Configuration file: $CONFIG_DIR/monitor_config.json"
+    log_info "State directory: $STATE_DIR"
+    log_info "Log file: /var/log/system-monitor.log (auto-rotates every 60 days)"
     log_info ""
     log_info "To view logs: tail -f /var/log/system-monitor.log"
     log_info "To test webhook: cd $INSTALL_DIR && python3 system_monitor.py --test-webhook"
     log_info "To uninstall: $0 --uninstall"
     
     if [[ -z "$WEBHOOK_URL" ]]; then
-        log_warn "Don't forget to configure your webhook URL in $INSTALL_DIR/monitor_config.json"
+        log_warn "Don't forget to configure your webhook URL in $CONFIG_DIR/monitor_config.json"
     fi
 }
 

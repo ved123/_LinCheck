@@ -15,11 +15,16 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 class SystemMonitor:
-    def __init__(self, config_file="monitor_config.json"):
+    def __init__(self, config_file="/etc/lincheck_monitoring/monitor_config.json"):
         self.config_file = config_file
-        self.state_file = "/tmp/system_monitor_state.json"
+        self.state_file = "/var/lib/lincheck_monitoring/system_monitor_state.json"
+        self.log_file = "/var/log/system-monitor.log"
         self.config = self.load_config()
         self.state = self.load_state()
+        
+        # Ensure directories exist
+        os.makedirs(os.path.dirname(self.state_file), exist_ok=True)
+        os.makedirs(os.path.dirname(self.log_file), exist_ok=True)
         
     def load_config(self):
         """Load configuration from JSON file"""
@@ -76,6 +81,82 @@ class SystemMonitor:
                 json.dump(self.state, f, indent=2)
         except Exception as e:
             print(f"Error saving state: {e}")
+    
+    def rotate_log_if_needed(self):
+        """Rotate log file if it's older than 60 days or larger than 100MB"""
+        try:
+            if not os.path.exists(self.log_file):
+                return
+            
+            # Get file stats
+            stat = os.stat(self.log_file)
+            file_age_days = (time.time() - stat.st_mtime) / (24 * 3600)
+            file_size_mb = stat.st_size / (1024 * 1024)
+            
+            should_rotate = False
+            reason = ""
+            
+            # Check age (60 days)
+            if file_age_days >= 60:
+                should_rotate = True
+                reason = f"age {file_age_days:.1f} days"
+            
+            # Check size (100MB)
+            elif file_size_mb >= 100:
+                should_rotate = True
+                reason = f"size {file_size_mb:.1f}MB"
+            
+            if should_rotate:
+                # Create rotated filename with timestamp
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                rotated_file = f"{self.log_file}.{timestamp}"
+                
+                # Rotate the log
+                os.rename(self.log_file, rotated_file)
+                
+                # Compress old log to save space
+                try:
+                    import gzip
+                    with open(rotated_file, 'rb') as f_in:
+                        with gzip.open(f"{rotated_file}.gz", 'wb') as f_out:
+                            f_out.writelines(f_in)
+                    os.remove(rotated_file)
+                    print(f"Log rotated and compressed: {rotated_file}.gz (reason: {reason})")
+                except ImportError:
+                    print(f"Log rotated: {rotated_file} (reason: {reason})")
+                
+                # Clean up old rotated logs (keep last 10)
+                self.cleanup_old_logs()
+                
+        except Exception as e:
+            print(f"Error during log rotation: {e}")
+    
+    def cleanup_old_logs(self):
+        """Remove old rotated logs, keeping only the last 10"""
+        try:
+            log_dir = os.path.dirname(self.log_file)
+            log_name = os.path.basename(self.log_file)
+            
+            # Find all rotated logs
+            rotated_logs = []
+            for filename in os.listdir(log_dir):
+                if filename.startswith(f"{log_name}.") and (filename.endswith('.gz') or filename.count('_') == 1):
+                    filepath = os.path.join(log_dir, filename)
+                    rotated_logs.append((os.path.getmtime(filepath), filepath))
+            
+            # Sort by modification time (newest first)
+            rotated_logs.sort(reverse=True)
+            
+            # Remove old logs (keep only last 10)
+            for _, filepath in rotated_logs[10:]:
+                try:
+                    os.remove(filepath)
+                    print(f"Removed old log: {filepath}")
+                except Exception as e:
+                    print(f"Error removing old log {filepath}: {e}")
+                    
+        except Exception as e:
+            print(f"Error during log cleanup: {e}")
     
     def get_ec2_metadata(self):
         """Get EC2 instance metadata if running on AWS"""
@@ -414,6 +495,11 @@ class SystemMonitor:
     
     def run_once(self):
         """Run a single check cycle"""
+        # Rotate log if needed (check once per day)
+        if not hasattr(self, '_last_log_check') or (datetime.now() - self._last_log_check).days >= 1:
+            self.rotate_log_if_needed()
+            self._last_log_check = datetime.now()
+        
         print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] Running system check...")
         
         # Display current usage
