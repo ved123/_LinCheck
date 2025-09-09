@@ -91,6 +91,14 @@ check_requirements() {
 install_python_packages() {
     log_info "Installing required Python packages..."
     pip3 install psutil requests
+    
+    # Try to install boto3 for EC2 instance name detection (optional)
+    log_info "Installing optional AWS boto3 package for EC2 instance name detection..."
+    if pip3 install boto3 2>/dev/null; then
+        log_info "boto3 installed successfully - EC2 instance names will be detected"
+    else
+        log_warn "boto3 installation failed - EC2 instance names won't be available (instance ID will be used instead)"
+    fi
 }
 
 create_install_directory() {

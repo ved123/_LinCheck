@@ -77,8 +77,87 @@ class SystemMonitor:
         except Exception as e:
             print(f"Error saving state: {e}")
     
+    def get_ec2_metadata(self):
+        """Get EC2 instance metadata if running on AWS"""
+        ec2_info = {
+            "instance_id": None,
+            "instance_name": None,
+            "instance_type": None,
+            "availability_zone": None,
+            "region": None
+        }
+        
+        try:
+            # EC2 metadata endpoint
+            metadata_url = "http://169.254.169.254/latest/meta-data"
+            headers = {"X-aws-ec2-metadata-token-ttl-seconds": "21600"}
+            
+            # Get token for IMDSv2
+            token_response = requests.put(
+                f"{metadata_url}/../api/token",
+                headers=headers,
+                timeout=2
+            )
+            
+            if token_response.status_code == 200:
+                token = token_response.text
+                auth_headers = {"X-aws-ec2-metadata-token": token}
+            else:
+                # Fallback to IMDSv1
+                auth_headers = {}
+            
+            # Get instance ID
+            try:
+                response = requests.get(f"{metadata_url}/instance-id", headers=auth_headers, timeout=2)
+                if response.status_code == 200:
+                    ec2_info["instance_id"] = response.text
+            except:
+                pass
+            
+            # Get instance type
+            try:
+                response = requests.get(f"{metadata_url}/instance-type", headers=auth_headers, timeout=2)
+                if response.status_code == 200:
+                    ec2_info["instance_type"] = response.text
+            except:
+                pass
+            
+            # Get availability zone
+            try:
+                response = requests.get(f"{metadata_url}/placement/availability-zone", headers=auth_headers, timeout=2)
+                if response.status_code == 200:
+                    az = response.text
+                    ec2_info["availability_zone"] = az
+                    ec2_info["region"] = az[:-1]  # Remove last character to get region
+            except:
+                pass
+            
+            # Get instance name from tags (requires EC2 describe-tags permission)
+            if ec2_info["instance_id"]:
+                try:
+                    # Try to get instance name from EC2 API
+                    import boto3
+                    ec2 = boto3.client('ec2', region_name=ec2_info["region"])
+                    response = ec2.describe_tags(
+                        Filters=[
+                            {'Name': 'resource-id', 'Values': [ec2_info["instance_id"]]},
+                            {'Name': 'key', 'Values': ['Name']}
+                        ]
+                    )
+                    if response['Tags']:
+                        ec2_info["instance_name"] = response['Tags'][0]['Value']
+                except:
+                    # If boto3 not available or no permissions, try alternative methods
+                    pass
+                
+        except Exception as e:
+            # Not running on EC2 or metadata service unavailable
+            pass
+        
+        return ec2_info
+    
     def get_system_info(self):
-        """Get hostname and IP address"""
+        """Get hostname, IP address, and EC2 info if available"""
         hostname = socket.gethostname()
         try:
             # Get primary IP address
@@ -89,7 +168,10 @@ class SystemMonitor:
         except Exception:
             ip_address = "unknown"
         
-        return hostname, ip_address
+        # Get EC2 metadata if available
+        ec2_info = self.get_ec2_metadata()
+        
+        return hostname, ip_address, ec2_info
     
     def get_cpu_usage(self):
         """Get current CPU usage percentage"""
@@ -109,7 +191,7 @@ class SystemMonitor:
             print(f"Error getting disk usage for {partition}: {e}")
             return 0
     
-    def send_webhook_alert(self, alert_type, current_value, hostname, ip_address, partition=None):
+    def send_webhook_alert(self, alert_type, current_value, hostname, ip_address, ec2_info, partition=None):
         """Send webhook notification"""
         if not self.config["webhook_url"]:
             print("Webhook URL not configured. Skipping alert.")
@@ -117,12 +199,19 @@ class SystemMonitor:
         
         timestamp = datetime.now().isoformat()
         
+        # Build server identification string
+        server_id = hostname
+        if ec2_info["instance_name"]:
+            server_id = f"{ec2_info['instance_name']} ({hostname})"
+        elif ec2_info["instance_id"]:
+            server_id = f"{hostname} ({ec2_info['instance_id']})"
+        
         if partition:
-            message = f"🚨 DISK ALERT: {partition} usage is {current_value:.1f}% (threshold: {self.config['disk_threshold']}%)"
+            message = f"🚨 DISK ALERT on {server_id}: {partition} usage is {current_value:.1f}% (threshold: {self.config['disk_threshold']}%)"
             alert_key = f"disk_{partition}"
         else:
             threshold = self.config[f"{alert_type}_threshold"]
-            message = f"🚨 {alert_type.upper()} ALERT: {alert_type} usage is {current_value:.1f}% (threshold: {threshold}%)"
+            message = f"🚨 {alert_type.upper()} ALERT on {server_id}: {alert_type} usage is {current_value:.1f}% (threshold: {threshold}%)"
             alert_key = alert_type
         
         payload = {
@@ -133,7 +222,8 @@ class SystemMonitor:
             "current_value": current_value,
             "threshold": self.config[f"{alert_type}_threshold"] if not partition else self.config["disk_threshold"],
             "message": message,
-            "partition": partition
+            "partition": partition,
+            "ec2_info": ec2_info
         }
         
         try:
@@ -169,7 +259,7 @@ class SystemMonitor:
     def check_thresholds(self):
         """Check if thresholds are exceeded for the required duration"""
         current_time = datetime.now()
-        hostname, ip_address = self.get_system_info()
+        hostname, ip_address, ec2_info = self.get_system_info()
         alert_duration = timedelta(minutes=self.config["sustained_threshold_minutes"])
         
         # Check CPU
@@ -182,7 +272,7 @@ class SystemMonitor:
                 high_since = datetime.fromisoformat(self.state["cpu_high_since"])
                 if current_time - high_since >= alert_duration:
                     if self.should_send_alert("cpu", current_time):
-                        self.send_webhook_alert("cpu", cpu_usage, hostname, ip_address)
+                        self.send_webhook_alert("cpu", cpu_usage, hostname, ip_address, ec2_info)
         else:
             if self.state["cpu_high_since"]:
                 print(f"CPU usage returned to normal: {cpu_usage:.1f}%")
@@ -198,7 +288,7 @@ class SystemMonitor:
                 high_since = datetime.fromisoformat(self.state["memory_high_since"])
                 if current_time - high_since >= alert_duration:
                     if self.should_send_alert("memory", current_time):
-                        self.send_webhook_alert("memory", memory_usage, hostname, ip_address)
+                        self.send_webhook_alert("memory", memory_usage, hostname, ip_address, ec2_info)
         else:
             if self.state["memory_high_since"]:
                 print(f"Memory usage returned to normal: {memory_usage:.1f}%")
@@ -218,7 +308,7 @@ class SystemMonitor:
                     if current_time - high_since >= alert_duration:
                         alert_key = f"disk_{partition_key}"
                         if self.should_send_alert(alert_key, current_time):
-                            self.send_webhook_alert("disk", disk_usage, hostname, ip_address, partition)
+                            self.send_webhook_alert("disk", disk_usage, hostname, ip_address, ec2_info, partition)
             else:
                 if partition in self.state["disk_high_since"]:
                     print(f"Disk usage returned to normal on {partition}: {disk_usage:.1f}%")
@@ -275,8 +365,8 @@ def main():
     monitor = SystemMonitor(args.config)
     
     if args.test_webhook:
-        hostname, ip_address = monitor.get_system_info()
-        monitor.send_webhook_alert("cpu", 95.5, hostname, ip_address)
+        hostname, ip_address, ec2_info = monitor.get_system_info()
+        monitor.send_webhook_alert("cpu", 95.5, hostname, ip_address, ec2_info)
     elif args.once:
         monitor.run_once()
     elif args.daemon:

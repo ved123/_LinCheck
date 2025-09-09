@@ -1,12 +1,12 @@
 #!/bin/bash
 
 # Quick Install Script for System Monitor
-# Usage: curl -sSL https://raw.githubusercontent.com/yourusername/system-monitor/main/quick-install.sh | sudo bash -s "https://your-webhook-url.com"
+# Usage: curl -sSL https://raw.githubusercontent.com/ved123/_LinCheck/main/quick-install.sh | sudo bash -s "https://your-webhook-url.com"
 
 set -e
 
 WEBHOOK_URL="$1"
-REPO_URL="https://raw.githubusercontent.com/yourusername/system-monitor/main"
+REPO_URL="https://raw.githubusercontent.com/ved123/_LinCheck/main"
 TEMP_DIR="/tmp/system-monitor-$$"
 
 # Colors for output
@@ -36,7 +36,7 @@ fi
 # Check if webhook URL provided
 if [[ -z "$WEBHOOK_URL" ]]; then
     log_error "Webhook URL is required!"
-    echo "Usage: curl -sSL https://raw.githubusercontent.com/yourusername/system-monitor/main/quick-install.sh | sudo bash -s \"https://your-webhook-url.com\""
+    echo "Usage: curl -sSL https://raw.githubusercontent.com/ved123/_LinCheck/main/quick-install.sh | sudo bash -s \"https://your-webhook-url.com\""
     exit 1
 fi
 
