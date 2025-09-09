@@ -18,16 +18,16 @@ A lightweight Python script that monitors CPU, memory, and disk usage on Linux s
 ### 🚀 One-Line Installation
 
 ```bash
-curl -sSL https://raw.githubusercontent.com/yourusername/system-monitor/main/quick-install.sh | sudo bash -s "https://your-webhook-url.com/alerts"
+curl -sSL https://raw.githubusercontent.com/ved123/_LinCheck/main/quick-install.sh | sudo bash -s "https://your-webhook-url.com/alerts"
 ```
 
 ### 📦 Manual Installation
 
 ```bash
 # Download the scripts to your server
-wget https://raw.githubusercontent.com/yourusername/system-monitor/main/system_monitor.py
-wget https://raw.githubusercontent.com/yourusername/system-monitor/main/install.sh
-wget https://raw.githubusercontent.com/yourusername/system-monitor/main/monitor_config.json
+wget https://raw.githubusercontent.com/ved123/_LinCheck/main/system_monitor.py
+wget https://raw.githubusercontent.com/ved123/_LinCheck/main/install.sh
+wget https://raw.githubusercontent.com/ved123/_LinCheck/main/monitor_config.json
 
 # Make scripts executable
 chmod +x install.sh system_monitor.py
@@ -173,7 +173,7 @@ SERVERS=("server1.example.com" "server2.example.com" "server3.example.com")
 
 for server in "${SERVERS[@]}"; do
     echo "Deploying to $server..."
-    ssh root@$server "curl -sSL https://raw.githubusercontent.com/yourusername/system-monitor/main/quick-install.sh | bash -s '$WEBHOOK_URL'"
+    ssh root@$server "curl -sSL https://raw.githubusercontent.com/ved123/_LinCheck/main/quick-install.sh | bash -s '$WEBHOOK_URL'"
 done
 ```
 
