@@ -2,6 +2,17 @@
 
 A lightweight Python script that monitors CPU, memory, and disk usage on Linux servers and sends webhook alerts when thresholds are exceeded for a specified duration.
 
+## 🚀 **Ready-to-Use One-Liner Installation**
+
+```bash
+curl -sSL https://raw.githubusercontent.com/ved123/_LinCheck/main/install.sh | sudo bash -s "YOUR_WEBHOOK_URL_HERE"
+```
+
+**Example:**
+```bash
+curl -sSL https://raw.githubusercontent.com/ved123/_LinCheck/main/install.sh | sudo bash -s "https://hooks.slack.com/services/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"
+```
+
 ## Features
 
 - **Multi-resource monitoring**: CPU, memory, and disk usage
