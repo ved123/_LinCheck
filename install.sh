@@ -162,32 +162,31 @@ create_install_directories() {
 copy_files() {
     log_info "Downloading/copying monitor files..."
     
-    # Check if we're running from downloaded files or need to download
-    if [[ -f "$SCRIPT_DIR/system_monitor.py" ]]; then
-        log_info "Using local files..."
-        cp "$SCRIPT_DIR/system_monitor.py" "$INSTALL_DIR/"
+    # Always download fresh files from GitHub to ensure latest version
+    log_info "Downloading fresh files from GitHub to ensure latest version..."
+    
+    # Download the main script (with cache busting to ensure latest version)
+    if curl -sSL -H "Cache-Control: no-cache" -o "$INSTALL_DIR/system_monitor.py" "https://raw.githubusercontent.com/ved123/_LinCheck/main/system_monitor.py?$(date +%s)"; then
         chmod +x "$INSTALL_DIR/system_monitor.py"
-        
-        if [[ -f "$SCRIPT_DIR/monitor_config.json" ]]; then
-            cp "$SCRIPT_DIR/monitor_config.json" "$CONFIG_DIR/"
-        fi
+        log_info "Downloaded system_monitor.py successfully (latest version)"
     else
-        log_info "Downloading files from GitHub repository..."
-        # Download the main script
-        if curl -sSL -o "$INSTALL_DIR/system_monitor.py" "https://raw.githubusercontent.com/ved123/_LinCheck/main/system_monitor.py"; then
+        log_error "Failed to download system_monitor.py from GitHub"
+        # Try to use local file as fallback
+        if [[ -f "$SCRIPT_DIR/system_monitor.py" ]]; then
+            log_warn "Using local backup file..."
+            cp "$SCRIPT_DIR/system_monitor.py" "$INSTALL_DIR/"
             chmod +x "$INSTALL_DIR/system_monitor.py"
-            log_info "Downloaded system_monitor.py successfully"
         else
-            log_error "Failed to download system_monitor.py"
+            log_error "No local backup available"
             exit 1
         fi
-        
-        # Download config file
-        if curl -sSL -o "$CONFIG_DIR/monitor_config.json" "https://raw.githubusercontent.com/ved123/_LinCheck/main/monitor_config.json"; then
-            log_info "Downloaded monitor_config.json successfully"
-        else
-            log_warn "Failed to download config file, creating default config"
-        fi
+    fi
+    
+    # Download config file
+    if curl -sSL -o "$CONFIG_DIR/monitor_config.json" "https://raw.githubusercontent.com/ved123/_LinCheck/main/monitor_config.json?$(date +%s)"; then
+        log_info "Downloaded monitor_config.json successfully"
+    else
+        log_warn "Failed to download config file, will create default config"
     fi
     
     # Create default config if it doesn't exist
