@@ -536,7 +536,7 @@ class SystemMonitor:
 
 def main():
     parser = argparse.ArgumentParser(description="System Monitor with Webhook Alerts")
-    parser.add_argument("--config", default="monitor_config.json", help="Configuration file path")
+    parser.add_argument("--config", default="/etc/lincheck_monitoring/monitor_config.json", help="Configuration file path")
     parser.add_argument("--once", action="store_true", help="Run once and exit (for cron)")
     parser.add_argument("--daemon", action="store_true", help="Run as daemon")
     parser.add_argument("--test-webhook", action="store_true", help="Send test webhook")
