@@ -10,7 +10,7 @@ curl -sSL https://raw.githubusercontent.com/ved123/_LinCheck/main/install.sh | s
 
 **Example:**
 ```bash
-curl -sSL https://raw.githubusercontent.com/ved123/_LinCheck/main/install.sh | sudo bash -s "https://hooks.slack.com/services/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"
+curl -sSL https://raw.githubusercontent.com/ved123/_LinCheck/main/install.sh | sudo bash -s "https://hooks.slack.com/services/YOUR/SLACK/WEBHOOK"
 ```
 
 ## Features
