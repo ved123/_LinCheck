@@ -11,6 +11,7 @@ CONFIG_DIR="/etc/lincheck_monitoring"
 STATE_DIR="/var/lib/lincheck_monitoring"
 SERVICE_USER="root"
 WEBHOOK_URL=""
+FORCE_INSTALL=false
 
 # Colors for output
 RED='\033[0;31m'
@@ -42,6 +43,7 @@ POSITIONAL ARGUMENTS:
 
 OPTIONS:
     -w, --webhook-url URL   Set the webhook URL for alerts
+    -f, --force             Force reinstall (remove existing installation first)
     -h, --help              Show this help message
     -u, --uninstall         Uninstall the system monitor
 
@@ -208,16 +210,53 @@ EOF
 configure_webhook() {
     if [[ -n "$WEBHOOK_URL" ]]; then
         log_info "Configuring webhook URL..."
+        log_info "Setting webhook: $WEBHOOK_URL"
+        
+        # Ensure config file exists before trying to update it
+        if [[ ! -f "$CONFIG_DIR/monitor_config.json" ]]; then
+            log_warn "Config file not found, creating it first..."
+            cat > "$CONFIG_DIR/monitor_config.json" << EOF
+{
+  "webhook_url": "",
+  "cpu_threshold": 90,
+  "memory_threshold": 90,
+  "disk_threshold": 90,
+  "sustained_threshold_minutes": 15,
+  "check_interval_seconds": 60,
+  "disk_partitions": ["/"]
+}
+EOF
+        fi
+        
+        # Update the webhook URL
         python3 << EOF
 import json
 config_file = "$CONFIG_DIR/monitor_config.json"
-with open(config_file, 'r') as f:
-    config = json.load(f)
+try:
+    with open(config_file, 'r') as f:
+        config = json.load(f)
+except:
+    # Create default config if file is corrupted
+    config = {
+        "webhook_url": "",
+        "cpu_threshold": 90,
+        "memory_threshold": 90,
+        "disk_threshold": 90,
+        "sustained_threshold_minutes": 15,
+        "check_interval_seconds": 60,
+        "disk_partitions": ["/"]
+    }
+
 config['webhook_url'] = "$WEBHOOK_URL"
 with open(config_file, 'w') as f:
     json.dump(config, f, indent=2)
+print(f"Webhook URL updated to: {config['webhook_url']}")
 EOF
         log_info "Webhook URL configured successfully"
+        
+        # Verify the configuration was set
+        CONFIGURED_URL=$(python3 -c "import json; print(json.load(open('$CONFIG_DIR/monitor_config.json'))['webhook_url'])")
+        log_info "Verified webhook URL: $CONFIGURED_URL"
     else
         log_warn "No webhook URL provided. You'll need to edit $CONFIG_DIR/monitor_config.json manually"
     fi
@@ -308,6 +347,10 @@ main() {
                 WEBHOOK_URL="$2"
                 shift 2
                 ;;
+            -f|--force)
+                FORCE_INSTALL=true
+                shift
+                ;;
             -u|--uninstall)
                 uninstall
                 exit 0
@@ -336,6 +379,12 @@ main() {
     done
     
     log_info "Starting system monitor installation..."
+    
+    # Force reinstall if requested
+    if [[ "$FORCE_INSTALL" == "true" ]]; then
+        log_info "Force install requested - removing existing installation..."
+        uninstall
+    fi
     
     check_requirements
     install_python_packages
