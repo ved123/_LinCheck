@@ -71,7 +71,8 @@ class SystemMonitor:
             "cpu_high_since": None,
             "memory_high_since": None,
             "disk_high_since": {},
-            "last_alert_sent": {}
+            "last_alert_sent": {},
+            "last_recovery_sent": {}
         }
     
     def save_state(self):
@@ -387,6 +388,126 @@ class SystemMonitor:
             print(f"Error sending webhook: {e}")
             return False
     
+    def send_recovery_alert(self, alert_type, current_value, hostname, ip_address, ec2_info, partition=None):
+        """Send recovery notification when issue is resolved"""
+        if not self.config["webhook_url"]:
+            print("Webhook URL not configured. Skipping recovery alert.")
+            return False
+        
+        timestamp = datetime.now().isoformat()
+        
+        # Build server identification
+        server_id = hostname
+        if ec2_info["instance_name"]:
+            server_id = f"{ec2_info['instance_name']} ({hostname})"
+        elif ec2_info["instance_id"]:
+            server_id = f"{hostname} ({ec2_info['instance_id']})"
+        
+        if partition:
+            message = f"✅ DISK RECOVERED on {server_id}: {partition} usage is now {current_value:.1f}% (threshold: {self.config['disk_threshold']}%)"
+            # Use same key format as alerts
+            partition_key = partition.replace("/", "_root" if partition == "/" else "")
+            alert_key = f"disk_{partition_key}"
+        else:
+            threshold = self.config[f"{alert_type}_threshold"]
+            message = f"✅ {alert_type.upper()} RECOVERED on {server_id}: {alert_type} usage is now {current_value:.1f}% (threshold: {threshold}%)"
+            alert_key = alert_type
+        
+        # Use Slack-compatible format with green color for recovery
+        payload = {
+            "text": message,
+            "username": "System Monitor",
+            "icon_emoji": ":white_check_mark:",
+            "attachments": [
+                {
+                    "color": "good",
+                    "fields": [
+                        {
+                            "title": "Server",
+                            "value": server_id,
+                            "short": True
+                        },
+                        {
+                            "title": "IP Address",
+                            "value": ip_address,
+                            "short": True
+                        },
+                        {
+                            "title": "Alert Type",
+                            "value": f"{alert_type.upper()} RECOVERED",
+                            "short": True
+                        },
+                        {
+                            "title": "Current Value",
+                            "value": f"{current_value:.1f}%",
+                            "short": True
+                        },
+                        {
+                            "title": "Threshold",
+                            "value": f"{self.config[f'{alert_type}_threshold'] if not partition else self.config['disk_threshold']}%",
+                            "short": True
+                        },
+                        {
+                            "title": "Recovered At",
+                            "value": timestamp,
+                            "short": True
+                        }
+                    ]
+                }
+            ]
+        }
+        
+        # Add EC2 info if available
+        if ec2_info.get("instance_type"):
+            payload["attachments"][0]["fields"].append({
+                "title": "Instance Type",
+                "value": ec2_info["instance_type"],
+                "short": True
+            })
+        
+        if ec2_info.get("availability_zone"):
+            payload["attachments"][0]["fields"].append({
+                "title": "Availability Zone",
+                "value": ec2_info["availability_zone"], 
+                "short": True
+            })
+        
+        try:
+            response = requests.post(
+                self.config["webhook_url"],
+                json=payload,
+                timeout=10,
+                headers={"Content-Type": "application/json"}
+            )
+            
+            if response.status_code == 200:
+                print(f"Recovery alert sent successfully: {message}")
+                self.state["last_recovery_sent"][alert_key] = timestamp
+                return True
+            else:
+                print(f"Failed to send recovery alert. HTTP {response.status_code}: {response.text}")
+                return False
+                
+        except Exception as e:
+            print(f"Error sending recovery webhook: {e}")
+            return False
+    
+    def should_send_recovery_alert(self, alert_key, current_time):
+        """Check if we should send a recovery alert (avoid spam)"""
+        # Only send recovery if we previously sent an alert for this issue
+        last_alert = self.state["last_alert_sent"].get(alert_key)
+        if not last_alert:
+            return False  # No previous alert, so no recovery needed
+        
+        # Don't send recovery if we already sent one recently (1 hour cooldown)
+        last_recovery = self.state["last_recovery_sent"].get(alert_key)
+        if last_recovery:
+            last_recovery_time = datetime.fromisoformat(last_recovery)
+            if current_time - last_recovery_time < timedelta(hours=1):
+                return False
+        
+        return True
+    
     def send_test_message(self, hostname, ip_address, ec2_info):
         """Send a friendly test message showing current system status"""
         if not self.config["webhook_url"]:
@@ -512,6 +633,9 @@ class SystemMonitor:
         else:
             if self.state["cpu_high_since"]:
                 print(f"CPU usage returned to normal: {cpu_usage:.1f}%")
+                # Send recovery alert if we previously sent an alert
+                if self.should_send_recovery_alert("cpu", current_time):
+                    self.send_recovery_alert("cpu", cpu_usage, hostname, ip_address, ec2_info)
             self.state["cpu_high_since"] = None
         
         # Check Memory
@@ -528,6 +652,9 @@ class SystemMonitor:
         else:
             if self.state["memory_high_since"]:
                 print(f"Memory usage returned to normal: {memory_usage:.1f}%")
+                # Send recovery alert if we previously sent an alert
+                if self.should_send_recovery_alert("memory", current_time):
+                    self.send_recovery_alert("memory", memory_usage, hostname, ip_address, ec2_info)
             self.state["memory_high_since"] = None
         
         # Check Disk partitions
@@ -548,6 +675,10 @@ class SystemMonitor:
             else:
                 if partition in self.state["disk_high_since"]:
                     print(f"Disk usage returned to normal on {partition}: {disk_usage:.1f}%")
+                    # Send recovery alert if we previously sent an alert
+                    alert_key = f"disk_{partition_key}"
+                    if self.should_send_recovery_alert(alert_key, current_time):
+                        self.send_recovery_alert("disk", disk_usage, hostname, ip_address, ec2_info, partition)
                     del self.state["disk_high_since"][partition]
         
         # Save state after checks
