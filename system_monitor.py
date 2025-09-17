@@ -289,7 +289,9 @@ class SystemMonitor:
         
         if partition:
             message = f"🚨 DISK ALERT on {server_id}: {partition} usage is {current_value:.1f}% (threshold: {self.config['disk_threshold']}%)"
-            alert_key = f"disk_{partition}"
+            # Use same key format as check_thresholds function
+            partition_key = partition.replace("/", "_root" if partition == "/" else "")
+            alert_key = f"disk_{partition_key}"
         else:
             threshold = self.config[f"{alert_type}_threshold"]
             message = f"🚨 {alert_type.upper()} ALERT on {server_id}: {alert_type} usage is {current_value:.1f}% (threshold: {threshold}%)"
