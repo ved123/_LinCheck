@@ -295,17 +295,75 @@ class SystemMonitor:
             message = f"🚨 {alert_type.upper()} ALERT on {server_id}: {alert_type} usage is {current_value:.1f}% (threshold: {threshold}%)"
             alert_key = alert_type
         
+        # Use Slack-compatible format (same as working test message)
         payload = {
-            "timestamp": timestamp,
-            "hostname": hostname,
-            "ip_address": ip_address,
-            "alert_type": alert_type,
-            "current_value": current_value,
-            "threshold": self.config[f"{alert_type}_threshold"] if not partition else self.config["disk_threshold"],
-            "message": message,
-            "partition": partition,
-            "ec2_info": ec2_info
+            "text": message,
+            "username": "System Monitor",
+            "icon_emoji": ":warning:",
+            "attachments": [
+                {
+                    "color": "danger",
+                    "fields": [
+                        {
+                            "title": "Server",
+                            "value": server_id,
+                            "short": True
+                        },
+                        {
+                            "title": "IP Address",
+                            "value": ip_address,
+                            "short": True
+                        },
+                        {
+                            "title": "Alert Type",
+                            "value": alert_type.upper(),
+                            "short": True
+                        },
+                        {
+                            "title": "Current Value",
+                            "value": f"{current_value:.1f}%",
+                            "short": True
+                        },
+                        {
+                            "title": "Threshold",
+                            "value": f"{self.config[f'{alert_type}_threshold'] if not partition else self.config['disk_threshold']}%",
+                            "short": True
+                        },
+                        {
+                            "title": "Timestamp",
+                            "value": timestamp,
+                            "short": True
+                        }
+                    ]
+                }
+            ],
+            # Keep original data for compatibility
+            "metadata": {
+                "timestamp": timestamp,
+                "hostname": hostname,
+                "ip_address": ip_address,
+                "alert_type": alert_type,
+                "current_value": current_value,
+                "threshold": self.config[f"{alert_type}_threshold"] if not partition else self.config["disk_threshold"],
+                "partition": partition,
+                "ec2_info": ec2_info
+            }
         }
+        
+        # Add EC2 info if available
+        if ec2_info.get("instance_type"):
+            payload["attachments"][0]["fields"].append({
+                "title": "Instance Type",
+                "value": ec2_info["instance_type"],
+                "short": True
+            })
+        
+        if ec2_info.get("availability_zone"):
+            payload["attachments"][0]["fields"].append({
+                "title": "Availability Zone",
+                "value": ec2_info["availability_zone"], 
+                "short": True
+            })
         
         try:
             response = requests.post(
@@ -349,14 +407,14 @@ class SystemMonitor:
         message = f"✅ Server '{server_name}' added to monitoring\n"
         message += f"Current status: CPU {cpu_usage:.1f}% | Memory {memory_usage:.1f}% | Disk {disk_usage:.1f}%"
         
-        # Simple payload that works with most webhooks
+        # Simple payload that works with most webhooks (same format as test message)
         payload = {
             "text": message,
             "username": "System Monitor",
             "icon_emoji": ":computer:",
             "attachments": [
                 {
-                    "color": "good",
+                    "color": "danger" if alert_type else "good",
                     "fields": [
                         {
                             "title": "Server",
