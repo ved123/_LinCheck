@@ -537,7 +537,7 @@ class SystemMonitor:
             "icon_emoji": ":computer:",
             "attachments": [
                 {
-                    "color": "danger" if alert_type else "good",
+                    "color": "good",
                     "fields": [
                         {
                             "title": "Server",
